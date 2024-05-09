@@ -6,7 +6,6 @@
    - topics, language and user subscriptions.
 
 """
-
 from elasticsearch import Elasticsearch
 from elasticsearch_dsl import Search, Q, SF
 
@@ -26,7 +25,7 @@ from zeeguu.core.elastic.elastic_query_builder import (
 )
 from zeeguu.core.util.timer_logging_decorator import time_this
 from zeeguu.core.elastic.settings import ES_CONN_STRING, ES_ZINDEX
-
+from datetime import timedelta, datetime
 
 def _prepare_user_constraints(user):
     language = user.learned_language
@@ -303,3 +302,78 @@ def _difficuty_level_bounds(level):
         lower_bounds = 4
         upper_bounds = 8
     return lower_bounds, upper_bounds
+
+
+def __find_articles_like(recommended_articles_ids: 'list[int]', limit: int, article_age: int, language_id: int) -> 'list[Article]':
+    es = Elasticsearch(ES_CONN_STRING)
+    fields = ["content", "title"]
+    language = Language.find_by_id(language_id)
+    like_documents = [
+        {"_index": ES_ZINDEX, "_id": str(doc_id) } for doc_id in recommended_articles_ids
+    ]
+
+    cutoff_date = datetime.now() - timedelta(days=article_age)
+
+    mlt_query = {
+        "query": {
+            "function_score": {
+                "query": {
+                    "bool": {
+                        "must": [
+                            {'match': {'language': language.name}}
+                        ],
+                        "should": {
+                            "more_like_this": {
+                                "fields": fields,
+                                "like": like_documents,
+                                "min_term_freq": 2,
+                                "max_query_terms": 25,
+                                "min_doc_freq": 5,
+                                "min_word_length": 3
+                            }
+                        },
+                        "filter": {
+                            "bool": {
+                                "must": [
+                                    {
+                                        "range": {
+                                            "published_time": {
+                                                "gte": cutoff_date.strftime('%Y-%m-%dT%H:%M:%S'),
+                                                "lte": "now"
+                                            }
+                                        }
+                                    }
+                                ]
+                            }
+                        }
+                    }
+                }, "functions": [
+                        {"gauss": {
+                            "published_time": {
+                                "origin": "now",
+                                "scale": "10d",
+                                "offset": "4h",
+                                "decay": 0.9
+                            }
+                        }}
+                ],
+                "score_mode": "sum"
+            }
+        }
+    }
+
+    res = es.search(index=ES_ZINDEX, body=mlt_query, size=limit)
+    articles = _to_articles_from_ES_hits(res["hits"]["hits"])
+    articles = [a for a in articles if a.broken == 0]
+    return articles
+
+def content_recommendations(user_id: int, language_id: int):
+       query = UserArticle.all_liked_articles_of_user_by_id(user_id)
+       
+       user_likes = []
+       for article in query:
+           if article.article.language_id == language_id:
+               user_likes.append(article.article_id)
+       
+       articles_to_recommend = __find_articles_like(user_likes, 20, 50, language_id)
+       return articles_to_recommend
