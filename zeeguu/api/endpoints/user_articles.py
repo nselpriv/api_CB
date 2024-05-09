@@ -1,6 +1,6 @@
 import flask
 
-from zeeguu.core.content_recommender import article_recommendations_for_user, topic_filter_for_user
+from zeeguu.core.content_recommender import article_recommendations_for_user, topic_filter_for_user, content_recommendations
 from zeeguu.core.model import UserArticle, Article, PersonalCopy
 
 from zeeguu.api.utils.route_wrappers import cross_domain, with_session
@@ -94,3 +94,20 @@ def user_articles_cohort():
     """
 
     return json_result(flask.g.user.cohort_articles_for_user())
+
+# ---------------------------------------------------------------------------
+@api.route("/user_articles/foryou", methods=("GET",))
+# ---------------------------------------------------------------------------
+@cross_domain
+@with_session
+def user_articles_foryou():
+    article_infos = []
+    try:
+        articles = content_recommendations(flask.g.user.id, flask.g.user.learned_language_id)
+        print("Sending CB recommendations")
+    except:
+        #Usually no recommendations when the user has not liked any articles
+        articles = []
+    article_infos = [UserArticle.user_article_info(flask.g.user, a) for a in articles]
+    
+    return json_result(article_infos)
