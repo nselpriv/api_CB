@@ -106,6 +106,7 @@ def user_articles_foryou():
         articles = content_recommendations(flask.g.user.id, flask.g.user.learned_language_id)
         print("Sending CB recommendations")
     except Exception as e:
+        print(e)
         capture_exception(e)
         #Usually no recommendations when the user has not liked any articles
         articles = []
