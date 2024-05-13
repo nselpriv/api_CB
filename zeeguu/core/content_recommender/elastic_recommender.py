@@ -22,6 +22,7 @@ from zeeguu.core.model import (
 from zeeguu.core.elastic.elastic_query_builder import (
     build_elastic_recommender_query,
     build_elastic_search_query,
+    build_elastic_more_like_this_query
 )
 from zeeguu.core.util.timer_logging_decorator import time_this
 from zeeguu.core.elastic.settings import ES_CONN_STRING, ES_ZINDEX
@@ -311,56 +312,13 @@ def __find_articles_like(recommended_articles_ids: 'list[int]', limit: int, arti
     like_documents = [
         {"_index": ES_ZINDEX, "_id": str(doc_id) } for doc_id in recommended_articles_ids
     ]
-
-    cutoff_date = datetime.now() - timedelta(days=article_age)
-
-    mlt_query = {
-        "query": {
-            "function_score": {
-                "query": {
-                    "bool": {
-                        "must": [
-                            {'match': {'language': language.name}}
-                        ],
-                        "should": {
-                            "more_like_this": {
-                                "fields": fields,
-                                "like": like_documents,
-                                "min_term_freq": 2,
-                                "max_query_terms": 25,
-                                "min_doc_freq": 5,
-                                "min_word_length": 3
-                            }
-                        },
-                        "filter": {
-                            "bool": {
-                                "must": [
-                                    {
-                                        "range": {
-                                            "published_time": {
-                                                "gte": cutoff_date.strftime('%Y-%m-%dT%H:%M:%S'),
-                                                "lte": "now"
-                                            }
-                                        }
-                                    }
-                                ]
-                            }
-                        }
-                    }
-                }, "functions": [
-                        {"gauss": {
-                            "published_time": {
-                                "origin": "now",
-                                "scale": "10d",
-                                "offset": "4h",
-                                "decay": 0.9
-                            }
-                        }}
-                ],
-                "score_mode": "sum"
-            }
-        }
-    }
+    
+    mlt_query = build_elastic_more_like_this_query(
+        language=language,
+        like_documents=like_documents,
+        similar_to=fields,
+        cutoff_age=article_age
+    )
 
     res = es.search(index=ES_ZINDEX, body=mlt_query, size=limit)
     articles = _to_articles_from_ES_hits(res["hits"]["hits"])

@@ -96,12 +96,11 @@ def user_articles_cohort():
     return json_result(flask.g.user.cohort_articles_for_user())
 
 # ---------------------------------------------------------------------------
-@api.route("/user_articles/cbmodel", methods=("GET",))
+@api.route("/user_articles/foryou", methods=("GET",))
 # ---------------------------------------------------------------------------
 @cross_domain
 @with_session
-def user_articles_cfmodel():
-    print(f"CFModel, user: {flask.g.user.id} Language: {flask.g.user.learned_language_id}")
+def user_articles_foryou():
     article_infos = []
     try:
         articles = content_recommendations(flask.g.user.id, flask.g.user.learned_language_id)
