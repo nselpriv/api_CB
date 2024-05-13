@@ -189,12 +189,12 @@ def build_elastic_more_like_this_query(
     language: Language,
     like_documents: list[dict[str, str]],
     similar_to: list[str],
-    cutoff_age: int,
+    cutoff_days: int,
     scale: str ="10d",
     offset: str ="4h",
     decay: float=0.9):
     
-    cutoff_date = datetime.now() - timedelta(days=cutoff_age)
+    cutoff_date = datetime.now() - timedelta(days=cutoff_days)
 
     query = {
         "query": {

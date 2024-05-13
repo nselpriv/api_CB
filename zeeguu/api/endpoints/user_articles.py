@@ -6,7 +6,7 @@ from zeeguu.core.model import UserArticle, Article, PersonalCopy
 from zeeguu.api.utils.route_wrappers import cross_domain, with_session
 from zeeguu.api.utils.json_result import json_result
 from . import api
-
+from sentry_sdk import capture_exception
 from flask import request
 
 
@@ -105,7 +105,8 @@ def user_articles_foryou():
     try:
         articles = content_recommendations(flask.g.user.id, flask.g.user.learned_language_id)
         print("Sending CB recommendations")
-    except:
+    except Exception as e:
+        capture_exception(e)
         #Usually no recommendations when the user has not liked any articles
         articles = []
     article_infos = [UserArticle.user_article_info(flask.g.user, a) for a in articles]

@@ -317,7 +317,7 @@ def __find_articles_like(recommended_articles_ids: 'list[int]', limit: int, arti
         language=language,
         like_documents=like_documents,
         similar_to=fields,
-        cutoff_age=article_age
+        cutoff_days=article_age
     )
 
     res = es.search(index=ES_ZINDEX, body=mlt_query, size=limit)
