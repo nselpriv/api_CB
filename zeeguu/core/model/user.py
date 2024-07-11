@@ -20,13 +20,16 @@ from zeeguu.core.util import password_hash
 from zeeguu.core.model import db
 from zeeguu.logging import warning
 
+# This mapping reflects splitting
+# the scale of 0 - 100 into 6 bands.
+# Rounded up (16.6666 ~ 17)
 CEFR_TO_DIFFICULTY_MAPPING = {
-    1: (1, 5.5),
-    2: (1, 6),
-    3: (3, 7),
-    4: (3, 7),
-    5: (6, 9),
-    6: (7, 10),
+    1: (0, 1.7),
+    2: (1.7, 3.4),
+    3: (3.4, 5.1),
+    4: (5.1, 6.8),
+    5: (6.8, 8.5),
+    6: (8.5, 10),
 }
 
 
@@ -168,7 +171,9 @@ class User(db.Model):
     def set_native_language(self, code):
         self.native_language = Language.find(code)
 
-    def set_learned_language(self, language_code, session=None):
+    def set_learned_language(
+        self, language_code: str, cefr_level: int = None, session=None
+    ):
         self.learned_language = Language.find(language_code)
 
         from zeeguu.core.model import UserLanguage
@@ -188,16 +193,21 @@ class User(db.Model):
         language = UserLanguage.find_or_create(session, self, self.learned_language)
         language.reading_news = True
         language.doing_exercises = True
+        if cefr_level:
+            language.cefr_level = cefr_level
 
         if session:
             session.add(language)
+            
 
-    def set_learned_language_level(self, language_code: str, level: str, session=None):
+    def set_learned_language_level(
+        self, language_code: str, cefr_level: str, session=None
+    ):
         learned_language = Language.find_or_create(language_code)
         from zeeguu.core.model import UserLanguage
 
         language = UserLanguage.find_or_create(session, self, learned_language)
-        language.cefr_level = int(level)
+        language.cefr_level = int(cefr_level)
         if session:
             session.add(language)
 

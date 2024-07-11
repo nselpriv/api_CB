@@ -25,7 +25,7 @@ MAX_CHAR_COUNT_IN_SUMMARY = 300
 
 HTML_TAG_CLEANR = re.compile("<[^>]*>")
 
-MULTIPLE_NEWLINES = re.compile("\n\s*\n")
+MULTIPLE_NEWLINES = re.compile(r"\n\s*\n")
 # \n matches a line-feed (newline) character (ASCII 10)
 # \s matches any whitespace character (equivalent to [\r\n\t\f\v  ])
 # \n matches a line-feed (newline) character (ASCII 10)
@@ -96,22 +96,22 @@ class Article(db.Model):
     MINIMUM_WORD_COUNT = 90
 
     def __init__(
-            self,
-            url,
-            title,
-            authors,
-            content,
-            summary,
-            published_time,
-            feed,
-            language,
-            htmlContent="",
-            uploader=None,
-            found_by_user=0,  # tracks whether the user found this article (as opposed to us recommending it)
-            broken=0,
-            deleted=0,
-            video=0,
-            img_url=None,
+        self,
+        url,
+        title,
+        authors,
+        content,
+        summary,
+        published_time,
+        feed,
+        language,
+        htmlContent="",
+        uploader=None,
+        found_by_user=0,  # tracks whether the user found this article (as opposed to us recommending it)
+        broken=0,
+        deleted=0,
+        video=0,
+        img_url=None,
     ):
 
         if not summary:
@@ -132,6 +132,7 @@ class Article(db.Model):
         self.deleted = deleted
         self.video = video
         self.img_url = img_url
+        self.fk_cefr_level = None
 
         self.convertHTML2TextIfNeeded()
         self.compute_fk_and_wordcount()
@@ -140,11 +141,11 @@ class Article(db.Model):
         fk_estimator = DifficultyEstimatorFactory.get_difficulty_estimator("fk")
         fk_difficulty = fk_estimator.estimate_difficulty(
             self.content, self.language, None
-        )["grade"]
+        )
 
         # easier to store integer in the DB
         # otherwise we have to use Decimal, and it's not supported on all dbs
-        self.fk_difficulty = fk_difficulty
+        self.fk_difficulty = fk_difficulty["grade"]
         self.word_count = len(self.content.split())
 
     def __repr__(self):
@@ -195,6 +196,23 @@ class Article(db.Model):
         :return:
         """
 
+        # We don't need to store this in the DB.
+        # I was trying to use the self.compute_fk_and_wordcount()
+        # but this wasn't working to set the field?
+        def fk_to_cefr(fk_difficulty):
+            if fk_difficulty < 17:
+                return "A1"
+            elif fk_difficulty < 34:
+                return "A2"
+            elif fk_difficulty < 51:
+                return "B1"
+            elif fk_difficulty < 68:
+                return "B2"
+            elif fk_difficulty < 85:
+                return "C1"
+            else:
+                return "C2"
+
         summary = self.content[:MAX_CHAR_COUNT_IN_SUMMARY]
 
         result_dict = dict(
@@ -205,7 +223,9 @@ class Article(db.Model):
             topics=self.topics_as_string(),
             video=self.video,
             metrics=dict(
-                difficulty=self.fk_difficulty / 100, word_count=self.word_count
+                difficulty=self.fk_difficulty / 100,
+                word_count=self.word_count,
+                cefr_level=fk_to_cefr(self.fk_difficulty),
             ),
         )
 
@@ -256,6 +276,15 @@ class Article(db.Model):
     def add_topic(self, topic):
         self.topics.append(topic)
 
+    def set_as_broken(self, session, broken_code):
+        from zeeguu.core.model.article_broken_code_map import ArticleBrokenMap
+
+        article_broken_map = ArticleBrokenMap.find_or_create(session, self, broken_code)
+        self.broken = True
+        session.add(article_broken_map)
+        session.add(self)
+        session.commit()
+
     def add_search(self, search):
         self.searches.append(search)
 
@@ -289,7 +318,7 @@ class Article(db.Model):
             sufficient_quality_plain_text,
         )
 
-        quality, reason = sufficient_quality_plain_text(self.content)
+        quality, reason, _ = sufficient_quality_plain_text(self.content)
         if not quality:
             print("Marking as broken. Reason: " + reason)
             self.mark_as_low_quality_and_remove_from_index()
@@ -333,7 +362,7 @@ class Article(db.Model):
 
     @classmethod
     def create_from_upload(
-            cls, session, title, content, htmlContent, uploader, language
+        cls, session, title, content, htmlContent, uploader, language
     ):
 
         current_time = datetime.now()
@@ -356,20 +385,20 @@ class Article(db.Model):
 
     @classmethod
     def find_or_create(
-            cls,
-            session,
-            url: str,
-            html_content=None,
-            title=None,
-            authors: str = "",
+        cls,
+        session,
+        url: str,
+        html_content=None,
+        title=None,
+        authors: str = "",
     ):
         """
 
-            If article for url found, return ID
+        If article for url found, return ID
 
-            If not found,
-                - if htmlContent is present, create article for that
-                - if not, download and create article then return
+        If not found,
+            - if htmlContent is present, create article for that
+            - if not, download and create article then return
         """
         from zeeguu.core.model import Url, Article, Language
 
