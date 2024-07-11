@@ -1,6 +1,7 @@
 from elasticsearch_dsl import Search, Q, SF
 from datetime import timedelta, datetime
 from zeeguu.core.model import Language
+from typing import List, Dict
 
 
 def match(key, value):
@@ -185,63 +186,83 @@ def build_elastic_search_query(
 
     return query
 
+def build_match_language(language_name: str):
+    return {
+        'match': {'language': language_name}
+    }
+
+def build_more_like_this(similar_to: List[str], like_documents: List[Dict[str, str]]):
+    return {
+        "more_like_this": {
+            "fields": similar_to,
+            "like": like_documents,
+            "min_term_freq": 2,
+            "max_query_terms": 25,
+            "min_doc_freq": 5,
+            "min_word_length": 3
+        }
+    }
+
+def build_range_published_time(gte_date: str):
+    return {
+        "range": {
+            "published_time": {
+                "gte": gte_date,
+                "lte": "now"
+            }
+        }
+    }
+
+def build_bool_filter(must_clauses: List[Dict]):
+    return {
+        "bool": {
+            "must": must_clauses
+        }
+    }
+
+def build_gauss_function(scale: str, offset: str, decay: float):
+    return {
+        "gauss": {
+            "published_time": {
+                "origin": "now",
+                "scale": scale,
+                "offset": offset,
+                "decay": decay
+            }
+        }
+    }
+
 def build_elastic_more_like_this_query(
     language: Language,
-    like_documents: list[dict[str, str]],
-    similar_to: list[str],
+    like_documents: List[Dict[str, str]],
+    similar_to: List[str],
     cutoff_days: int,
-    scale: str ="10d",
-    offset: str ="4h",
-    decay: float=0.9):
+    scale: str = "10d",
+    offset: str = "4h",
+    decay: float = 0.9):
     
     cutoff_date = datetime.now() - timedelta(days=cutoff_days)
 
+    match_language = build_match_language(language.name)
+    more_like_this = build_more_like_this(similar_to, like_documents)
+    range_published_time = build_range_published_time(cutoff_date.strftime('%Y-%m-%dT%H:%M:%S'))
+    bool_filter = build_bool_filter([range_published_time])
+    gauss_function = build_gauss_function(scale, offset, decay)
+    
     query = {
         "query": {
             "function_score": {
                 "query": {
                     "bool": {
-                        "must": [
-                            {'match': {'language': language.name}}
-                        ],
-                        "should": {
-                            "more_like_this": {
-                                "fields": similar_to,
-                                "like": like_documents,
-                                "min_term_freq": 2,
-                                "max_query_terms": 25,
-                                "min_doc_freq": 5,
-                                "min_word_length": 3
-                            }
-                        },
-                        "filter": {
-                            "bool": {
-                                "must": [
-                                    {
-                                        "range": {
-                                            "published_time": {
-                                                "gte": cutoff_date.strftime('%Y-%m-%dT%H:%M:%S'),
-                                                "lte": "now"
-                                            }
-                                        }
-                                    }
-                                ]
-                            }
-                        }
+                        "must": [match_language],
+                        "should": more_like_this,
+                        "filter": bool_filter
                     }
-                }, "functions": [
-                        {"gauss": {
-                            "published_time": {
-                                "origin": "now",
-                                "scale": scale,
-                                "offset": offset,
-                                "decay": decay
-                            }
-                        }}
-                ],
+                },
+                "functions": [gauss_function],
                 "score_mode": "sum"
             }
         }
     }
 
-    return query 
+    return query
